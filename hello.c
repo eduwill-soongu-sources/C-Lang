@@ -1,6 +1,11 @@
+
 #include <stdio.h>
 
-int main() {
-    printf("Hello, C on macOS!\n");
+int main(void) {
+    
     return 0;
 }
+
+
+
+
