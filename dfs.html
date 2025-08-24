@@ -1,0 +1,250 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DFS 미로 탐험 시뮬레이터</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Noto Sans KR', sans-serif;
+            touch-action: manipulation;
+        }
+        .status-box {
+            min-height: 100px;
+        }
+        .explanation-box {
+            min-height: 80px;
+        }
+        canvas {
+            background-color: #f9fafb;
+            border-radius: 0.5rem;
+            border: 1px solid #e5e7eb;
+        }
+    </style>
+</head>
+<body class="bg-gray-100 text-gray-800 flex items-center justify-center min-h-screen p-4">
+
+    <div class="w-full max-w-4xl bg-white rounded-2xl shadow-lg p-6 md:p-8 space-y-6">
+        <!-- 헤더 -->
+        <header class="text-center">
+            <h1 class="text-3xl md:text-4xl font-bold text-gray-900">DFS 미로 탐험 🗺️</h1>
+            <p class="text-gray-600 mt-2">깊이 우선 탐색(DFS)이 어떻게 길을 찾는지 직접 확인해보세요!</p>
+        </header>
+
+        <!-- 시뮬레이터 영역 -->
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            <!-- 왼쪽: 시각화 캔버스 -->
+            <div class="lg:col-span-2 flex flex-col items-center justify-center">
+                <canvas id="dfsCanvas" width="400" height="420"></canvas>
+            </div>
+
+            <!-- 오른쪽: 컨트롤 및 상태 -->
+            <div class="space-y-4">
+                <!-- 컨트롤 버튼 -->
+                <div class="grid grid-cols-2 gap-3">
+                    <button id="resetBtn" class="w-full bg-blue-600 text-white font-bold py-3 px-4 rounded-lg hover:bg-blue-700 transition-all duration-200 shadow-md">
+                        탐험 시작!
+                    </button>
+                    <button id="nextStepBtn" class="w-full bg-gray-200 text-gray-800 font-bold py-3 px-4 rounded-lg hover:bg-gray-300 transition-all duration-200 shadow-md" disabled>
+                        다음 단계
+                    </button>
+                </div>
+
+                <!-- 상태 표시 -->
+                <div class="bg-gray-50 p-4 rounded-lg border border-gray-200 status-box">
+                    <h3 class="font-bold text-lg mb-2">🧠 탐험가의 기억 (스택)</h3>
+                    <p id="stackStatus" class="text-gray-700 break-words">아직 탐험을 시작하지 않았어요.</p>
+                </div>
+                <div class="bg-gray-50 p-4 rounded-lg border border-gray-200 status-box">
+                    <h3 class="font-bold text-lg mb-2">✅ 방문한 장소</h3>
+                    <p id="visitedStatus" class="text-gray-700 break-words">아직 방문한 곳이 없어요.</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- 설명 영역 -->
+        <div class="bg-blue-50 border-l-4 border-blue-500 text-blue-800 p-4 rounded-lg explanation-box">
+            <h3 class="font-bold text-lg mb-2">탐험 일지 📜</h3>
+            <p id="explanation">"탐험 시작!" 버튼을 눌러 DFS 미로 탐험을 시작하세요.</p>
+        </div>
+    </div>
+
+    <script>
+        // --- 기본 설정 ---
+        const canvas = document.getElementById('dfsCanvas');
+        const ctx = canvas.getContext('2d');
+        const resetBtn = document.getElementById('resetBtn');
+        const nextStepBtn = document.getElementById('nextStepBtn');
+        const stackStatus = document.getElementById('stackStatus');
+        const visitedStatus = document.getElementById('visitedStatus');
+        const explanation = document.getElementById('explanation');
+
+        // --- 그래프 데이터 ---
+        const adjList = {
+            0: [1, 2],
+            1: [0, 3, 4],
+            2: [0, 5],
+            3: [1],
+            4: [1, 5],
+            5: [2, 4, 6],
+            6: [5]
+        };
+        const nodeCount = Object.keys(adjList).length;
+        
+        // --- 수정된 포인트: 노드 좌표를 세로로 배치 ---
+        // '깊이'를 시각적으로 표현하기 위해 수직적인 구조로 변경했습니다.
+        const nodePositions = {
+            0: { x: 200, y: 50 },  // Level 0
+            1: { x: 100, y: 150 }, // Level 1
+            2: { x: 300, y: 150 }, // Level 1
+            3: { x: 50, y: 250 },  // Level 2
+            4: { x: 150, y: 250 }, // Level 2
+            5: { x: 250, y: 250 }, // Level 2
+            6: { x: 350, y: 350 }  // Level 3
+        };
+
+        // --- 상태 변수 ---
+        let visited;
+        let stack;
+        let simulationState;
+        let currentNode;
+
+        // --- 그리기 함수 ---
+        function drawGraph() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            // 1. 간선(Edge) 먼저 그리기
+            ctx.strokeStyle = '#cbd5e1'; // slate-300
+            ctx.lineWidth = 2;
+            for (let node in adjList) {
+                for (let neighbor of adjList[node]) {
+                    if (parseInt(node) < neighbor) {
+                        const pos1 = nodePositions[node];
+                        const pos2 = nodePositions[neighbor];
+                        ctx.beginPath();
+                        ctx.moveTo(pos1.x, pos1.y);
+                        ctx.lineTo(pos2.x, pos2.y);
+                        ctx.stroke();
+                    }
+                }
+            }
+
+            // 2. 노드(Vertex) 그리기
+            for (let i = 0; i < nodeCount; i++) {
+                const pos = nodePositions[i];
+                ctx.beginPath();
+                
+                if (currentNode === i) {
+                    ctx.fillStyle = '#3b82f6'; // blue-500 (현재)
+                } else if (stack && stack.includes(i)) {
+                    ctx.fillStyle = '#f97316'; // orange-500 (스택)
+                } else if (visited && visited[i]) {
+                    ctx.fillStyle = '#22c55e'; // green-500 (방문 완료)
+                } else {
+                    ctx.fillStyle = '#94a3b8'; // slate-400 (미방문)
+                }
+
+                ctx.arc(pos.x, pos.y, 20, 0, Math.PI * 2);
+                ctx.fill();
+                
+                ctx.fillStyle = 'white';
+                ctx.font = 'bold 16px Noto Sans KR';
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.fillText(i, pos.x, pos.y);
+            }
+        }
+
+        // --- 상태 업데이트 함수 ---
+        function updateStatus() {
+            stackStatus.textContent = stack.length > 0 ? stack.join(' → ') : '비어있음';
+            
+            const visitedNodes = [];
+            for(let i=0; i<visited.length; i++) {
+                if(visited[i]) visitedNodes.push(i);
+            }
+            visitedStatus.textContent = visitedNodes.length > 0 ? visitedNodes.join(', ') : '없음';
+        }
+
+        // --- 시뮬레이션 초기화 ---
+        function initialize() {
+            visited = new Array(nodeCount).fill(false);
+            stack = [];
+            simulationState = 'idle';
+            currentNode = null;
+            
+            const startNode = 0;
+            stack.push(startNode);
+            
+            explanation.textContent = `탐험 시작! 🚩 시작 지점인 ${startNode}번 장소를 기억(스택에 Push)합니다.`;
+            
+            nextStepBtn.disabled = false;
+            resetBtn.textContent = "탐험 리셋";
+            
+            drawGraph();
+            updateStatus();
+        }
+
+        // --- DFS 한 단계 실행 ---
+        function nextStep() {
+            if (stack.length === 0) {
+                explanation.textContent = "모든 곳을 탐험 완료했습니다! 🎉";
+                simulationState = 'finished';
+                nextStepBtn.disabled = true;
+                currentNode = null;
+                drawGraph();
+                return;
+            }
+
+            const u = stack.pop();
+            currentNode = u;
+
+            if (visited[u]) {
+                explanation.textContent = `${u}번 장소는 이미 가봤던 곳이네요. 다른 길을 찾아봅니다. (스택에서 Pop)`;
+                drawGraph();
+                updateStatus();
+                return;
+            }
+
+            visited[u] = true;
+            
+            const neighbors = adjList[u];
+            const unvisitedNeighbors = neighbors.filter(n => !visited[n]);
+            
+            let explanationText = `${u}번 장소에 도착했습니다. 방문 기록을 남기고 주변을 살핍니다. (스택에서 Pop, 방문 처리)`;
+
+            if (unvisitedNeighbors.length > 0) {
+                 // 인접 리스트를 역순으로 순회해야 스택에 0번 인덱스부터 들어감
+                 for (let i = neighbors.length - 1; i >= 0; i--) {
+                    const v = neighbors[i];
+                    if (!visited[v]) {
+                        stack.push(v);
+                    }
+                }
+                explanationText += `\n새로운 길(${unvisitedNeighbors.join(', ')})을 발견했습니다. 나중에 가보기 위해 모두 기억(스택에 Push)합니다.`;
+            } else {
+                 explanationText += `\n더 이상 갈 수 있는 새로운 길이 없네요.`;
+            }
+            explanation.textContent = explanationText;
+
+            drawGraph();
+            updateStatus();
+        }
+
+        // --- 이벤트 리스너 ---
+        resetBtn.addEventListener('click', initialize);
+        nextStepBtn.addEventListener('click', nextStep);
+
+        // --- 초기 화면 그리기 ---
+        window.onload = () => {
+            const container = canvas.parentElement;
+            const size = Math.min(container.clientWidth, 400);
+            canvas.width = size;
+            canvas.height = size * 1.05;
+            drawGraph();
+        };
+    </script>
+</body>
+</html>
